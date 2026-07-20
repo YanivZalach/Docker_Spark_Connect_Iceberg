@@ -1,3 +1,7 @@
 /data
 /.idea
 *.ipynb_checkpoints
+
+# Ignore all Jupyter notebooks except the iceberg demo
+*.ipynb
+!iceberg_demo_tables.ipynb
