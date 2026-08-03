@@ -16,6 +16,48 @@ services:
     volumes:
       - ./data:/opt/spark/work-dir/spark-warehouse/data:rw
 
+  nessie-db:
+    image: postgres:16
+    hostname: nessie-db
+    environment:
+      POSTGRES_USER: nessie
+      POSTGRES_PASSWORD: nessie
+      POSTGRES_DB: nessie
+    volumes:
+      - nessie-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nessie"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  nessie:
+    image: ghcr.io/projectnessie/nessie:0.103.6
+    hostname: nessie
+    depends_on:
+      nessie-db:
+        condition: service_healthy
+    ports:
+      - "19120:19120"
+    environment:
+      - nessie.version.store.type=JDBC
+      - nessie.version.store.persist.jdbc.datasource=postgresql
+      - quarkus.datasource.postgresql.jdbc.url=jdbc:postgresql://nessie-db:5432/nessie
+      - quarkus.datasource.postgresql.username=nessie
+      - quarkus.datasource.postgresql.password=nessie
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bash",
+          "-c",
+          "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /q/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && cat <&3 | grep -q '200 OK'",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 15s
+
   spark-connect:
     build:
       context: .
@@ -26,26 +68,26 @@ services:
       - "4040:4040"
       - "15002:15002"
     depends_on:
-      - spark-master
+      spark-master:
+        condition: service_started
+      nessie:
+        condition: service_healthy
     volumes:
       - ./data:/warehouse:rw
-    entrypoint: ["/opt/spark/bin/spark-submit"]
+    entrypoint: ["/bin/bash", "-c"]
     command:
-      - "--packages"
-      - "org.apache.spark:spark-connect_2.12:3.5.4"
-      - "--conf"
-      - "spark.connect.grpc.binding.address=0.0.0.0"
-      - "--conf"
-      - "spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
-      - "--conf"
-      - "spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkCatalog"
-      - "--conf"
-      - "spark.sql.catalog.spark_catalog.type=hadoop"
-      - "--conf"
-      - "spark.sql.catalog.spark_catalog.warehouse=/warehouse"
-      - "--class"
-      - "org.apache.spark.sql.connect.service.SparkConnectServer"
-      - "spark-internal"
+      - >
+        exec /opt/spark/bin/spark-submit
+        --packages org.apache.spark:spark-connect_2.12:3.5.4
+        --conf spark.connect.grpc.binding.address=0.0.0.0
+        --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
+        --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkCatalog
+        --conf spark.sql.catalog.spark_catalog.type=nessie
+        --conf spark.sql.catalog.spark_catalog.uri=http://nessie:19120/api/v2
+        --conf spark.sql.catalog.spark_catalog.ref=main
+        --conf spark.sql.catalog.spark_catalog.warehouse=file:///warehouse
+        --class org.apache.spark.sql.connect.service.SparkConnectServer
+        spark-internal
     healthcheck:
       test:
         [
@@ -88,3 +130,6 @@ services:
       - start-notebook.py
       - --IdentityProvider.token=
       - --ServerApp.root_dir=/home/jovyan/work
+
+volumes:
+  nessie-db-data:
