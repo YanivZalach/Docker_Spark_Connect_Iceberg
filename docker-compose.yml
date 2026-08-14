@@ -74,12 +74,15 @@ services:
         condition: service_healthy
     volumes:
       - ./data:/warehouse:rw
+      - spark-event-logs:/opt/spark-events:rw
     entrypoint: ["/bin/bash", "-c"]
     command:
       - >
         exec /opt/spark/bin/spark-submit
         --packages org.apache.spark:spark-connect_2.12:3.5.4
         --conf spark.connect.grpc.binding.address=0.0.0.0
+        --conf spark.eventLog.enabled=true
+        --conf spark.eventLog.dir=file:///opt/spark-events
         --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
         --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkCatalog
         --conf spark.sql.catalog.spark_catalog.type=nessie
@@ -100,6 +103,21 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  spark-history:
+    image: apache/spark:3.5.4
+    hostname: spark-history
+    user: root
+    ports:
+      - "18080:18080"
+    environment:
+      - SPARK_HISTORY_OPTS=-Dspark.history.fs.logDirectory=file:///opt/spark-events
+    volumes:
+      - spark-event-logs:/opt/spark-events:ro
+    entrypoint:
+      - "bash"
+      - "-c"
+      - "/opt/spark/sbin/start-history-server.sh && tail -f /dev/null"
 
   spark-worker:
     image: apache/spark:3.5.4
@@ -133,3 +151,4 @@ services:
 
 volumes:
   nessie-db-data:
+  spark-event-logs:
