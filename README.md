@@ -21,7 +21,7 @@ The compose file starts six containers:
 - **postgres** — Shared Postgres instance: the `nessie` DB backs Nessie's catalog metadata (branches, table/view pointers, commit history), and the `hive_metastore` DB backs Spark's Hive metastore
 - **nessie** — Project Nessie REST catalog server. API at http://localhost:19120/api/v2, backed by `postgres` via a JDBC version store, so catalog state survives `docker compose down` / `up`
 - **spark-connect** — Spark Connect server with the Iceberg runtime and Avro jars installed. Listens on `localhost:15002` (gRPC), Spark UI at http://localhost:4040. Uses Nessie as the default `nessie` catalog for Iceberg tables, with the warehouse backed by `./data`. `spark_catalog` is Spark's own Hive session catalog, used for non-Iceberg tables; its metastore is the `hive_metastore` database in `postgres`, and its table data lives in `./data/hive`
-- **jupyter** — JupyterLab (Python 3.12 with `pyspark[connect]` 3.5.4) at http://localhost:8888, no token. Notebooks are stored in `./notebooks` on the host
+- **jupyter** — classic Jupyter Notebook UI via NbClassic (Python 3.12 with `pyspark[connect]` 3.5.4) at http://localhost:8888, no token. Notebooks are stored in `./notebooks` on the host
 
 ## Quick start
 
