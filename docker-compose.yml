@@ -16,17 +16,18 @@ services:
     volumes:
       - ./data:/opt/spark/work-dir/spark-warehouse/data:rw
 
-  nessie-db:
+  postgres:
     image: postgres:16
-    hostname: nessie-db
+    hostname: postgres
     environment:
-      POSTGRES_USER: nessie
-      POSTGRES_PASSWORD: nessie
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
       POSTGRES_DB: nessie
     volumes:
-      - nessie-db-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nessie"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -35,16 +36,16 @@ services:
     image: ghcr.io/projectnessie/nessie:0.103.6
     hostname: nessie
     depends_on:
-      nessie-db:
+      postgres:
         condition: service_healthy
     ports:
       - "19120:19120"
     environment:
       - nessie.version.store.type=JDBC
       - nessie.version.store.persist.jdbc.datasource=postgresql
-      - quarkus.datasource.postgresql.jdbc.url=jdbc:postgresql://nessie-db:5432/nessie
-      - quarkus.datasource.postgresql.username=nessie
-      - quarkus.datasource.postgresql.password=nessie
+      - quarkus.datasource.postgresql.jdbc.url=jdbc:postgresql://postgres:5432/nessie
+      - quarkus.datasource.postgresql.username=postgres
+      - quarkus.datasource.postgresql.password=postgres
     healthcheck:
       test:
         [
@@ -84,11 +85,18 @@ services:
         --conf spark.eventLog.enabled=true
         --conf spark.eventLog.dir=file:///opt/spark-events
         --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
-        --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkCatalog
-        --conf spark.sql.catalog.spark_catalog.type=nessie
-        --conf spark.sql.catalog.spark_catalog.uri=http://nessie:19120/api/v2
-        --conf spark.sql.catalog.spark_catalog.ref=main
-        --conf spark.sql.catalog.spark_catalog.warehouse=file:///warehouse
+        --conf spark.sql.catalog.nessie=org.apache.iceberg.spark.SparkCatalog
+        --conf spark.sql.catalog.nessie.type=nessie
+        --conf spark.sql.catalog.nessie.uri=http://nessie:19120/api/v2
+        --conf spark.sql.catalog.nessie.ref=main
+        --conf spark.sql.catalog.nessie.warehouse=file:///warehouse
+        --conf spark.sql.defaultCatalog=nessie
+        --conf spark.sql.catalogImplementation=hive
+        --conf spark.sql.warehouse.dir=/warehouse/hive
+        --conf spark.hadoop.javax.jdo.option.ConnectionURL=jdbc:postgresql://postgres:5432/hive_metastore
+        --conf spark.hadoop.javax.jdo.option.ConnectionDriverName=org.postgresql.Driver
+        --conf spark.hadoop.javax.jdo.option.ConnectionUserName=postgres
+        --conf spark.hadoop.javax.jdo.option.ConnectionPassword=postgres
         --class org.apache.spark.sql.connect.service.SparkConnectServer
         spark-internal
     healthcheck:
@@ -150,5 +158,5 @@ services:
       - --ServerApp.root_dir=/home/jovyan/work
 
 volumes:
-  nessie-db-data:
+  postgres-data:
   spark-event-logs:
