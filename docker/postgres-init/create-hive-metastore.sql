@@ -1,4 +1,2 @@
+-- Empty database for the Hive metastore. The hive-metastore service creates its schema on first start.
 CREATE DATABASE hive_metastore;
-\c hive_metastore
-\cd /docker-entrypoint-initdb.d/hive
-\i hive-schema-2.3.0.postgres.sql

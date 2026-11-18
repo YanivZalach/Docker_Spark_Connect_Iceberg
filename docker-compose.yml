@@ -59,6 +59,25 @@ services:
       retries: 15
       start_period: 15s
 
+  hive-metastore:
+    build:
+      context: .
+      dockerfile: docker/hive-metastore.Dockerfile
+    platform: linux/amd64
+    hostname: hive-metastore
+    user: root
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./data:/warehouse:rw
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/9083"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
   spark-connect:
     build:
       context: .
@@ -72,6 +91,8 @@ services:
       spark-master:
         condition: service_started
       nessie:
+        condition: service_healthy
+      hive-metastore:
         condition: service_healthy
     volumes:
       - ./data:/warehouse:rw
@@ -91,12 +112,10 @@ services:
         --conf spark.sql.catalog.nessie.ref=main
         --conf spark.sql.catalog.nessie.warehouse=file:///warehouse
         --conf spark.sql.defaultCatalog=nessie
+        --conf spark.sql.iceberg.vectorization.enabled=false
         --conf spark.sql.catalogImplementation=hive
         --conf spark.sql.warehouse.dir=/warehouse/hive
-        --conf spark.hadoop.javax.jdo.option.ConnectionURL=jdbc:postgresql://postgres:5432/hive_metastore
-        --conf spark.hadoop.javax.jdo.option.ConnectionDriverName=org.postgresql.Driver
-        --conf spark.hadoop.javax.jdo.option.ConnectionUserName=postgres
-        --conf spark.hadoop.javax.jdo.option.ConnectionPassword=postgres
+        --conf spark.hadoop.hive.metastore.uris=thrift://hive-metastore:9083
         --class org.apache.spark.sql.connect.service.SparkConnectServer
         spark-internal
     healthcheck:
@@ -138,6 +157,34 @@ services:
       - "/opt/spark/sbin/start-worker.sh spark://spark-master:7077 && tail -f /dev/null"
     volumes:
       - ./data:/opt/spark/work-dir/spark-warehouse/data:rw
+
+  trino:
+    image: trinodb/trino:484
+    hostname: trino
+    user: root
+    ports:
+      - "8090:8080"
+    depends_on:
+      nessie:
+        condition: service_healthy
+      hive-metastore:
+        condition: service_healthy
+    volumes:
+      - ./data:/warehouse:rw
+      - ./docker/trino/catalog/nessie.properties:/etc/trino/catalog/nessie.properties:ro
+      - ./docker/trino/catalog/hive.properties:/etc/trino/catalog/hive.properties:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bash",
+          "-c",
+          "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /v1/info HTTP/1.0\r\n\r\n' >&3 && [[ $$(cat <&3) == *'\"starting\":false'* ]]",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
   jupyter:
     build:

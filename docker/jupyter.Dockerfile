@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir \
       "pyarrow>=4,<18" \
       "setuptools>=75.0.0" \
       "psycopg[binary]>=3.2,<3.3" \
+      "trino>=0.330,<1" \
       nbclassic
 
 # Start the classic Notebook UI instead of JupyterLab
